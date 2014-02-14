@@ -19,7 +19,7 @@
     // str(f/p)time standard stipulates that a %, optionally followed by a O or E, followed by a
     // letter of the alphabet (or a % symbol) is an strptime fragment. (See the strftime parser
     // for more)
-    var strftimeRegExp = /\%([OE])?([a-z%])/gi
+    var strftimeRegExp = /\%([OE-])?([a-z%])/gi
 
     // Declaring TempusParsers here as a "private" var. This will become the list of parser
     // modules that `set` iterates through (see Tempus.addParser)
@@ -29,6 +29,10 @@
     // become the list of format processors used for strftime and strptime
     ,   FORMAT_PROCESSORS
     ,   REVERSE_FORMAT_PROCESSORS
+
+    // Declaring FORMAT_MODIFICATORS as "private" var. These will become the list of
+    // available lambda modificators for formatted string.
+    ,   FORMAT_MODIFICATORS = []
 
     // Declaring TIME_FORMATS, DEFAULT_REVERSE_FORMATTER and DEFAULT_REVERSE_FORMATTER_REGEX and
     // DEFAULT_REVERSE_FORMATTER_REGEXS as "private" vars. These become the formats for toString and
@@ -228,14 +232,29 @@
      * @param {Array} ampm "Lowercase" versions of AM, PM, followed by "uppercase" versions
      *
      */
-    Tempus.addLocale = function (localeName, FM, SM, FD, SD, AM) {
+    Tempus.addLocale = function (localeName, FM, FNM, SM, FD, SD, AM) {
         LOCALES[localeName] = {
             FM: FM,
+            FNM: FNM,
             SM: SM,
             FD: FD,
             SD: SD,
-            AM: AM
+            AM: AM,
+            SMP: '(?:' + SM.join('|') + ')',
+            FMP: '(?:' + FM.join('|') + ')',
+            FNMP: '(?:' + FNM.join('|') + ')'
         };
+    };
+
+    Tempus.setLocale = function (localeName) {
+        if (!LOCALES[localeName]) {
+            this.LOCALE = 'en';
+        } else {
+            this.LOCALE = localeName;
+        };
+        REVERSE_FORMAT_PROCESSORS['b'] = [LOCALES[this.LOCALE].SMP, TProto.month];
+        REVERSE_FORMAT_PROCESSORS['B'] = [LOCALES[this.LOCALE].FMP, TProto.month];
+        REVERSE_FORMAT_PROCESSORS['Q'] = [LOCALES[this.LOCALE].FNMP, TProto.month]
     };
 
     /**
@@ -404,6 +423,7 @@
                 var newsetter;
                 if (realTypeOf(setter) == TYPE_STRING) {
                     newsetter = arrIndexOf(LOCALES[this._l].FM, setter);
+                    newsetter = newsetter !== -1 ? newsetter : arrIndexOf(LOCALES[this._l].FNM, setter);
                     newsetter = newsetter !== -1 ? newsetter : arrIndexOf(LOCALES[this._l].SM, setter);
                 } else {
                     newsetter = +setter;
@@ -426,6 +446,14 @@
             return LOCALES[this._l].FM[this.month()];
         },
 
+        getFullMonthNameNominative: function () {
+            if (LOCALES[this._l].FNM[0] != null) {
+                return LOCALES[this._l].FNM[this.month()];
+            } else {
+                return LOCALES[this._l].FM[this.month()];
+            };
+        },
+
         getLastDayOfMonth: function () {
             var d = new Date(this._d);
             d.setMonth(d.getMonth() + 1);
@@ -439,7 +467,7 @@
 
         week: function (setter) {
             if (0 in arguments) {
-				// subtract the number of days since the last Friday on Jan 1st.
+                // subtract the number of days since the last Friday on Jan 1st.
                 return trackDST(this.dayOfYear(setter * 7 - (this.dayOfYear(1).day() + 2) % 7));
             }
 
@@ -676,18 +704,19 @@
             if (TIME_FORMATS[format]) format = TIME_FORMATS[format];
 
             return format.replace(strftimeRegExp, function (chunk, prefix, proc) {
+                var modify = FORMAT_MODIFICATORS[prefix] || FORMAT_MODIFICATORS['default']
                 var newproc = FORMAT_PROCESSORS[proc];
 
                 if (!newproc) return chunk;
 
                 if (realTypeOf(newproc) == TYPE_ARRAY)
-                    return stringPad(newproc[0].call(self), newproc[1], newproc[2]);
+                    return modify(stringPad(newproc[0].call(self), newproc[1], newproc[2]));
 
                 if (realTypeOf(newproc) == TYPE_FUNCTION) {
-                    return newproc.call(self);
+                    return modify(newproc.call(self));
                 }
 
-                return self.toString.call(self, newproc);
+                return modify(self.toString.call(self, newproc));
             });
         },
 
@@ -910,6 +939,13 @@
     // Add Tempus.now like Date.now
     Tempus.now = function () { return +new Date(); };
 
+    /*********************************************/
+    /*       Format Modificators (strftime)      */
+    /*********************************************/
+    FORMAT_MODIFICATORS ={
+        '-': function(str){return str.trim()},
+        'default': function(str){return str}
+    };
 
     /*********************************************/
     /*        Format Processors (strftime)       */
@@ -919,6 +955,7 @@
         A: TProto.getFullDayName,             // (Py, Rb, PHP) The full weekday name: Sunday to Saturday
         b: TProto.getMonthName,               // (Py, Rb, PHP) Month name Jan to Dec
         B: TProto.getFullMonthName,           // (Py, Rb, PHP) Month name January to December
+        Q: TProto.getFullMonthNameNominative, // **New** (Inspired by moment.js) Get nominative month name instead of accusative (russian in ex.)
         c: '%a %b %d %T %Y',                  // (Py, Rb, PHP) To preferred locale str
         C: TProto.century,                    // (Py, Rb, PHP) Century e.g 2009 = 20
         d: [TProto.date, 2],                  // (Py, Rb, PHP) Day of month 01-31
@@ -984,12 +1021,12 @@
     REVERSE_FORMAT_PROCESSORS = {
         a: ['(?:\\w+)?,?'],
         A: ['(?:\\w+)?,?'],
-        b: ['(?:\\w+)', TProto.month],
-        B: ['(?:\\w+)', TProto.month],
+        b: ['(?:[_0-9a-zA-Z]+)', TProto.month],
+        B: ['(?:[_0-9a-zA-Z]+)', TProto.month],
         C: [rg_digit2, TProto.century],
-        d: [rg_digit2, TProto.date],
+        d: ['\\d{1,2}', TProto.date],
         D: [rg_date, ''],
-        e: ['\\s?[\\d{1,2}]'],
+        e: ['\\s?[\\d{1,2}]', TProto.date],
         f: ['\\d{1,}', TProto.secondFraction],
         F: [rg_date, ''],
         g: [rg_digit2, ''],
@@ -1087,7 +1124,7 @@
                     formatFunction[i-1].call(this, match[i]);
                 }
             }
-            this.date(days);
+            this.date(days || 1);
 
             return this;
         },
@@ -1101,7 +1138,7 @@
     /*              English Locale                 */
     /***********************************************/
 
-    var SD = [], SM = [], FM = [
+    var SD = [], SM = [], FNM = [], FM = [
         'January',      'February', 'March',    'April',
         'May',          'June',     'July',     'August',
         'September',    'October',  'November', 'December'
@@ -1118,10 +1155,10 @@
         }
     }
 
-    Tempus.addLocale('en', FM, SM, FD, SD, ['AM', 'PM', 'am', 'pm']);
+    Tempus.addLocale('en', FM, FNM, SM, FD, SD, ['AM', 'PM', 'am', 'pm']);
 
     // Set the default locale
-    Tempus.LOCALE = 'en';
+    Tempus.setLocale('en');
 
     // Register the default set of time formats. These can be extended at will by the user, and are
     // used globally by all instances, so don't put them on the prototype.
