@@ -467,7 +467,7 @@
 
         week: function (setter) {
             if (0 in arguments) {
-                // subtract the number of days since the last Friday on Jan 1st.
+				// subtract the number of days since the last Friday on Jan 1st.
                 return trackDST(this.dayOfYear(setter * 7 - (this.dayOfYear(1).day() + 2) % 7));
             }
 
@@ -943,7 +943,7 @@
     /*       Format Modificators (strftime)      */
     /*********************************************/
     FORMAT_MODIFICATORS ={
-        '-': function(str){return str.trim()},
+        '-': function(str){return str.replace(/^\s+|\s+$/g, "")},
         'default': function(str){return str}
     };
 

@@ -51,8 +51,11 @@
                 if (value) {
                     // Value is negative
                     if (value < 0) {
-                        value = intvlUpperVals[i-1] + value - overlap;
+                        value = Math.abs(intvlUpperVals[i-1] + value - overlap);
                         overlap = 1;
+                    }
+                    if (value === 0) {
+                      value = 1;
                     }
                     fragments.unshift(((dateQualifiers[value] || dateQualifiers[0])[i]).replace('%n', value));
                 }
@@ -66,7 +69,7 @@
             return fragments.join(fragSep);
     }
 
-    
+
     function TempusInterval() {
         // If this was called without "new " then be friendly and do it for the user.
         if (!(this instanceof TempusInterval)) return new TempusInterval(arguments);
@@ -76,7 +79,7 @@
         var ar = !(1 in arguments) && /ar/.test(realTypeOf(arguments[0])) ? arguments[0] : arguments;
 
         // Set the "date from"
-        this._dF = new Tempus(ar[0]);
+        this._dF = (new Tempus()).set(ar[0]);
 
         // Set the "date to"
         this._dT = this._dF.clone().set(ar[1]);
@@ -103,13 +106,13 @@
             S: unitSeparator
         };
     };
-    
+
     TIProto = TempusInterval.prototype = {
-        
+
         valueOf: function () {
             return +(this._dT) - +(this._dF);
         },
-        
+
         toString: function (format) {
             return intvlLOCALES[this._l].T[+(this.valueOf() > 0)].replace('%d', intvltoString.call(this,
                 intvlLOCALES[this._l].Q, // Qualifiers
@@ -124,7 +127,7 @@
             this._dF = value;
             return this;
         },
-        
+
         toISOString: function () {
             return (this.valueOf() < 0 ? '-' : '') + 'P' + intvltoString.call(this,
                 [intvlSuffxies], // Qualifiers
@@ -132,7 +135,7 @@
             );
         }
 
-        
+
     };
 
     TIProto.toJSON = TIProto.toISOString;
@@ -144,45 +147,45 @@
     }
 
     for(var meth in intvlMethods) PSetIntvMethod(intvlMethods[meth]);
-    
+
     /***********************************************/
     /*           ISO8601 Interval Parser           */
     /*               (e.g +P3Y4M2D))               */
     /***********************************************/
-    
+
     function parseISOInterveralFragment(matches, neg, isTime) {
         var i = matches.length
         ,   n;
-        
+
         neg = neg ? 'sub' : 'add';
-        
+
         // Loop through the matches...
         while(i--) {
             // value is the match (e.g. 3D) minus the last letter (e.g 3)
             matches[i] = matches[i].match(ISOIntervalFragmentRegex);
-            
+
             // If we're looking at Times, add a T to the beginning of prop
             if (isTime) matches[i][3] = 'T' + matches[i][3];
-            
+
             // Treat Weeks specially
             if (matches[i][3] === 'W') {
                 this[neg + intvlMethods.D](+matches[i][0] * 7);
             } else {
-                
+
                 // Set the property using "subValue() or addValue()"
                 this[ neg + intvlMethods[matches[i][3]] ].call(this, +matches[i][1]);
-                
+
                 // If we have a decimal, look for the next property in the line
                 if ((+matches[i][2] || 0) > 0) {
                     // Parse the split decimal also:
                     n = arrIndexOf(intvlShorthand, +matches[i][3]) + 1 || intvlShorthand.length;
-                    
+
                     this[ neg + intvlMethods[ intvlShorthand[n] ] ](+matches[i][1] * intvlUpperVals[n]);
                 }
             }
         }
     }
-    
+
     Tempus.addParser(
          // Our test function, returns true if the string a matches our regexp
         function (interval_string) {
@@ -198,10 +201,10 @@
             // Tempus('P3D', 2012, 01, 01); -> returns 4th Jan
             // If there arent any more args, then we get todays date, which we need
             if (1 in arguments) this.set.apply(this, ArSlice.call(arguments, 1));
-            
+
             // Our regex to split up the neg/pos, day, and time values.
             if (!(intveral_string = (''+intveral_string).match(ISOIntervalRegExp))) return false;
-            
+
             // Match the date portion:
             if (intveral_string[2] && (matches = intveral_string[2].match(/\d+(?:[,\.]\d+)?[YMWD]/g))) {
                 parseISOInterveralFragment.call(this, matches, intveral_string[1] == '-');
